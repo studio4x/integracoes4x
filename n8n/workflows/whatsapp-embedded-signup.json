@@ -1,0 +1,322 @@
+{
+  "name": "Studio 4x - WhatsApp Embedded Signup",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## WhatsApp Embedded Signup\nRecebe o código temporário retornado pela Meta, valida a origem da solicitação, troca o código por um token empresarial e inscreve o aplicativo nos webhooks da WABA.\n\n**Segurança:** o App Secret não fica neste arquivo. Configure uma credencial Query Auth no nó **Trocar código por token** com o parâmetro `client_secret`.",
+        "height": 260,
+        "width": 430,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -760,
+        -420
+      ],
+      "id": "5c0ab684-6e04-4b85-bf21-0ad58e7180a5",
+      "name": "Instruções"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-embedded-signup",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "https://integracoes.studio4x.com.br"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -700,
+        0
+      ],
+      "id": "3e36c690-6f67-429c-9cf8-798f8b679f91",
+      "name": "Webhook - Embedded Signup",
+      "webhookId": "0c4ec4d7-9b29-410f-8ae5-b55589820bc1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const EXPECTED = Object.freeze({\n  source: 'studio4x_whatsapp_embedded_signup',\n  appId: '1471972893861151',\n  configurationId: '1655842242183536',\n  redirectOrigin: 'https://integracoes.studio4x.com.br',\n  requestedFeature: 'whatsapp_business_app_onboarding',\n});\n\nconst request = $json && typeof $json === 'object' ? $json : {};\nconst body = request.body && typeof request.body === 'object' ? request.body : request;\nconst session = body.sessionInfo && typeof body.sessionInfo === 'object' ? body.sessionInfo : {};\n\nconst authorizationCode = typeof body.authorizationCode === 'string'\n  ? body.authorizationCode.trim()\n  : '';\nconst wabaId = String(session.wabaId ?? session.waba_id ?? '').trim();\nconst phoneNumberId = String(session.phoneNumberId ?? session.phone_number_id ?? '').trim();\nconst businessId = String(session.businessId ?? session.business_id ?? '').trim();\nconst errors = [];\n\nfor (const [field, expected] of Object.entries(EXPECTED)) {\n  if (body[field] !== expected) errors.push(`Campo ${field} inválido.`);\n}\n\nif (authorizationCode.length < 20) errors.push('Código de autorização ausente ou inválido.');\nif (!/^\\d+$/.test(wabaId)) errors.push('WABA ID ausente ou inválido.');\nif (!/^\\d+$/.test(phoneNumberId)) errors.push('Phone Number ID ausente ou inválido.');\n\nconst valid = errors.length === 0;\n\nreturn [{\n  json: {\n    valid,\n    errors,\n    authorizationCode,\n    wabaId,\n    phoneNumberId,\n    businessId: /^\\d+$/.test(businessId) ? businessId : null,\n    redirectOrigin: EXPECTED.redirectOrigin,\n    responseBody: valid\n      ? null\n      : {\n          success: false,\n          message: 'A solicitação recebida não passou pela validação de segurança.',\n          errors,\n        },\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ],
+      "id": "4c1eb050-d3e4-45f1-bcf2-acdeebdd27ad",
+      "name": "Validar solicitação"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "9309f7ab-6006-41d6-832d-9669ca358df6",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -220,
+        0
+      ],
+      "id": "8392c9f0-c388-41b3-80c3-0caaf721688c",
+      "name": "Solicitação válida?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.responseBody }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "https://integracoes.studio4x.com.br"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        40,
+        180
+      ],
+      "id": "e75c234d-081c-4abf-8e2e-74a86892ee7a",
+      "name": "Responder solicitação inválida"
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v25.0/oauth/access_token",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "1471972893861151"
+            },
+            {
+              "name": "code",
+              "value": "={{ $json.authorizationCode }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        40,
+        -80
+      ],
+      "id": "bd45006e-f56f-4666-ae44-f2b43406398d",
+      "name": "Trocar código por token"
+    },
+    {
+      "parameters": {
+        "jsCode": "const validated = $('Validar solicitação').first().json;\nconst accessToken = typeof $json.access_token === 'string' ? $json.access_token.trim() : '';\n\nif (!accessToken) {\n  throw new Error('A Meta não retornou o access_token na troca do código.');\n}\n\nreturn [{\n  json: {\n    wabaId: validated.wabaId,\n    phoneNumberId: validated.phoneNumberId,\n    businessId: validated.businessId,\n    accessToken,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        -80
+      ],
+      "id": "8ec6a312-c519-45c1-9c10-680333f21fc6",
+      "name": "Preparar inscrição"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v25.0/{{ $json.wabaId }}/subscribed_apps",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.accessToken }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        -80
+      ],
+      "id": "96c73453-ff1d-4b86-a393-c0f9077c3b0f",
+      "name": "Inscrever app na WABA"
+    },
+    {
+      "parameters": {
+        "jsCode": "const signup = $('Preparar inscrição').first().json;\n\nif ($json.success !== true) {\n  throw new Error('A Meta não confirmou a inscrição do aplicativo na WABA.');\n}\n\nreturn [{\n  json: {\n    responseBody: {\n      success: true,\n      message: 'Autorização concluída e aplicativo inscrito nos webhooks da conta do WhatsApp.',\n      wabaId: signup.wabaId,\n      phoneNumberId: signup.phoneNumberId,\n      businessId: signup.businessId,\n    },\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        -80
+      ],
+      "id": "aebbeae1-cfa5-41ca-8336-ad8c12a62940",
+      "name": "Preparar resposta de sucesso"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.responseBody }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "https://integracoes.studio4x.com.br"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1080,
+        -80
+      ],
+      "id": "b97c674b-841b-49be-bcbf-4d29e809824c",
+      "name": "Responder sucesso"
+    }
+  ],
+  "connections": {
+    "Webhook - Embedded Signup": {
+      "main": [
+        [
+          {
+            "node": "Validar solicitação",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar solicitação": {
+      "main": [
+        [
+          {
+            "node": "Solicitação válida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Solicitação válida?": {
+      "main": [
+        [
+          {
+            "node": "Trocar código por token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder solicitação inválida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trocar código por token": {
+      "main": [
+        [
+          {
+            "node": "Preparar inscrição",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar inscrição": {
+      "main": [
+        [
+          {
+            "node": "Inscrever app na WABA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inscrever app na WABA": {
+      "main": [
+        [
+          {
+            "node": "Preparar resposta de sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar resposta de sucesso": {
+      "main": [
+        [
+          {
+            "node": "Responder sucesso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveExecutionProgress": false,
+    "saveManualExecutions": false,
+    "timezone": "America/Sao_Paulo"
+  }
+}
