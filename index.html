@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="Conexão segura do WhatsApp Business com a plataforma de integrações da Studio 4x.">
+  <title>Conectar WhatsApp Business | Studio 4x</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="page-shell">
+    <section class="integration-card" aria-labelledby="page-title">
+      <header class="brand-header">
+        <div class="brand-mark" aria-hidden="true">4X</div>
+        <div>
+          <p class="eyebrow">Studio 4x • Integrações</p>
+          <h1 id="page-title">Conecte seu WhatsApp Business</h1>
+        </div>
+      </header>
+
+      <div class="content-grid">
+        <div class="main-content">
+          <p class="lead">
+            Autorize a conexão oficial do seu número do WhatsApp Business com a
+            plataforma da Studio 4x, mantendo o aplicativo no celular por meio do
+            recurso de coexistência da Meta.
+          </p>
+
+          <div class="notice" role="note">
+            <strong>Antes de começar</strong>
+            <span>Mantenha o WhatsApp Business atualizado e faça um backup recente das conversas.</span>
+          </div>
+
+          <ol class="steps" aria-label="Etapas da conexão">
+            <li>
+              <span class="step-number">1</span>
+              <div>
+                <strong>Entre com sua conta da Meta</strong>
+                <p>Use uma conta com acesso administrativo ao portfólio empresarial.</p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number">2</span>
+              <div>
+                <strong>Selecione o negócio e o número</strong>
+                <p>Escolha o número que já está ativo no aplicativo WhatsApp Business.</p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number">3</span>
+              <div>
+                <strong>Confirme a conexão</strong>
+                <p>Finalize a autorização seguindo as instruções exibidas pela Meta.</p>
+              </div>
+            </li>
+          </ol>
+
+          <button id="connect-button" class="primary-button" type="button" disabled>
+            <span class="button-icon" aria-hidden="true">◉</span>
+            <span id="button-label">Carregando conexão segura…</span>
+          </button>
+
+          <p class="privacy-note">
+            A Studio 4x não solicita sua senha do Facebook ou do WhatsApp. A autenticação
+            ocorre diretamente nas telas oficiais da Meta.
+          </p>
+        </div>
+
+        <aside class="status-panel" aria-labelledby="status-title">
+          <div class="status-heading">
+            <span id="status-indicator" class="status-indicator is-loading" aria-hidden="true"></span>
+            <div>
+              <p class="eyebrow">Status da integração</p>
+              <h2 id="status-title">Preparando</h2>
+            </div>
+          </div>
+
+          <p id="status-message" class="status-message" aria-live="polite">
+            Aguarde enquanto carregamos o serviço oficial da Meta.
+          </p>
+
+          <dl id="result-details" class="result-details" hidden>
+            <div>
+              <dt>Conta do WhatsApp</dt>
+              <dd id="result-waba">—</dd>
+            </div>
+            <div>
+              <dt>Número conectado</dt>
+              <dd id="result-phone">—</dd>
+            </div>
+            <div>
+              <dt>Modo</dt>
+              <dd>Coexistência</dd>
+            </div>
+          </dl>
+
+          <div class="security-box">
+            <strong>Conexão oficial</strong>
+            <p>O fluxo utiliza o Embedded Signup e a WhatsApp Cloud API da Meta.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <footer class="page-footer">
+      <span>© <span id="current-year"></span> Studio 4x</span>
+      <span>Integração oficial com a WhatsApp Business Platform</span>
+    </footer>
+  </main>
+
+  <noscript>
+    <div class="noscript-message">Ative o JavaScript para iniciar a conexão com o WhatsApp Business.</div>
+  </noscript>
+
+  <script src="app.js" defer></script>
+  <script
+    async
+    defer
+    crossorigin="anonymous"
+    src="https://connect.facebook.net/pt_BR/sdk.js">
+  </script>
+</body>
+</html>
