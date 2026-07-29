@@ -1,0 +1,59 @@
+name: Implantar workflow no n8n
+
+on:
+  workflow_dispatch:
+    inputs:
+      workflow_file:
+        description: Arquivo JSON do workflow
+        required: true
+        default: n8n/workflows/whatsapp-embedded-signup.json
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-n8n-workflow
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Validar configuração
+        shell: bash
+        env:
+          N8N_BASE_URL: ${{ vars.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+          N8N_WORKFLOW_FILE: ${{ inputs.workflow_file }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${N8N_BASE_URL:-}" ]; then
+            echo "A variável N8N_BASE_URL não foi configurada."
+            exit 1
+          fi
+
+          if [ -z "${N8N_API_KEY:-}" ]; then
+            echo "O segredo N8N_API_KEY não foi configurado."
+            exit 1
+          fi
+
+          if [ ! -f "${N8N_WORKFLOW_FILE}" ]; then
+            echo "O arquivo ${N8N_WORKFLOW_FILE} não existe."
+            exit 1
+          fi
+
+          jq empty "${N8N_WORKFLOW_FILE}"
+
+      - name: Criar ou atualizar workflow
+        env:
+          N8N_BASE_URL: ${{ vars.N8N_BASE_URL }}
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+          N8N_WORKFLOW_FILE: ${{ inputs.workflow_file }}
+        run: node scripts/deploy-n8n-workflow.mjs
