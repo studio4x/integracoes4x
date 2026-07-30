@@ -6,7 +6,6 @@ on:
       - 'n8n/workflows/*.json'
       - 'n8n/workflows/**/*.json'
       - 'scripts/deploy-n8n-workflow.mjs'
-      - 'scripts/patch-whatsapp-router-normalization.mjs'
       - '.github/workflows/deploy-n8n-workflow.yml'
   workflow_dispatch:
     inputs:
@@ -17,7 +16,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: deploy-n8n-workflows
@@ -33,29 +32,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 2
-
-      - name: Atualizar normalização do roteador WhatsApp
-        shell: bash
-        run: |
-          set -euo pipefail
-          node scripts/patch-whatsapp-router-normalization.mjs
-          jq empty n8n/workflows/evolucao-clinica/whatsapp-cloud-webhook-router.json
-
-      - name: Persistir workflow corrigido
-        if: github.ref == 'refs/heads/main'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add n8n/workflows/evolucao-clinica/whatsapp-cloud-webhook-router.json
-
-          if git diff --cached --quiet; then
-            echo "O workflow já contém a normalização atualizada."
-          else
-            git commit -m "fix(n8n): alinhar eventos WhatsApp ao contrato da plataforma"
-            git push origin HEAD:main
-          fi
 
       - name: Validar configuração
         shell: bash
@@ -97,7 +73,6 @@ jobs:
 
             if git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" -- \
               'scripts/deploy-n8n-workflow.mjs' \
-              'scripts/patch-whatsapp-router-normalization.mjs' \
               '.github/workflows/deploy-n8n-workflow.yml' | grep -q .; then
               find n8n/workflows -type f -name '*.json' -print | sort -u > "$FILES_FILE"
             fi
