@@ -67,7 +67,9 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "${INPUT_WORKFLOW_FILE:-}" ]; then
             printf '%s\n' "$INPUT_WORKFLOW_FILE" > "$FILES_FILE"
           elif [ "$EVENT_NAME" = "push" ] && [ -n "${BEFORE_SHA:-}" ] && ! printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
-            git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" -- 'n8n/workflows/**/*.json' 'n8n/workflows/*.json' > "$FILES_FILE"
+            git diff --name-only --diff-filter=ACMRT "$BEFORE_SHA" "$CURRENT_SHA" -- \
+              'n8n/workflows/**/*.json' \
+              'n8n/workflows/*.json' > "$FILES_FILE"
 
             if git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" -- \
               'scripts/deploy-n8n-workflow.mjs' \
@@ -86,21 +88,30 @@ jobs:
             exit 0
           fi
 
+          VALID_FILES_FILE="$(mktemp)"
           while IFS= read -r file; do
+            [ -n "$file" ] || continue
             if [ ! -f "$file" ]; then
-              echo "O arquivo $file não existe."
-              exit 1
+              echo "Ignorando workflow removido: $file"
+              continue
             fi
             jq empty "$file"
+            printf '%s\n' "$file" >> "$VALID_FILES_FILE"
           done < "$FILES_FILE"
 
+          if [ ! -s "$VALID_FILES_FILE" ]; then
+            echo "Nenhum workflow existente precisa ser implantado."
+            echo "has_files=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           echo "Workflows selecionados:"
-          cat "$FILES_FILE"
+          cat "$VALID_FILES_FILE"
 
           {
             echo "has_files=true"
             echo "files<<EOF"
-            cat "$FILES_FILE"
+            cat "$VALID_FILES_FILE"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
