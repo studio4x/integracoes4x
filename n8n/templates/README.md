@@ -1,0 +1,1 @@
+Modelos reutilizáveis de workflows do n8n. Arquivos nesta pasta não são implantados automaticamente.
