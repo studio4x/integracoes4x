@@ -1,36 +1,43 @@
-name: Implantar workflow no n8n
+name: Implantar workflows no n8n
 
 on:
+  push:
+    paths:
+      - 'n8n/workflows/*.json'
+      - 'n8n/workflows/**/*.json'
+      - 'scripts/deploy-n8n-workflow.mjs'
+      - '.github/workflows/deploy-n8n-workflow.yml'
   workflow_dispatch:
     inputs:
       workflow_file:
-        description: Arquivo JSON do workflow
-        required: true
-        default: n8n/workflows/whatsapp-embedded-signup.json
+        description: Arquivo JSON do workflow; deixe vazio para implantar todos
+        required: false
+        default: ''
         type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-n8n-workflow
+  group: deploy-n8n-workflows
   cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Baixar repositório
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
 
       - name: Validar configuração
         shell: bash
         env:
           N8N_BASE_URL: ${{ vars.N8N_BASE_URL }}
           N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
-          N8N_WORKFLOW_FILE: ${{ inputs.workflow_file }}
         run: |
           set -euo pipefail
 
@@ -44,16 +51,71 @@ jobs:
             exit 1
           fi
 
-          if [ ! -f "${N8N_WORKFLOW_FILE}" ]; then
-            echo "O arquivo ${N8N_WORKFLOW_FILE} não existe."
-            exit 1
+      - name: Selecionar workflows para implantação
+        id: select-workflows
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_WORKFLOW_FILE: ${{ github.event.inputs.workflow_file || '' }}
+          BEFORE_SHA: ${{ github.event.before || '' }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          FILES_FILE="$(mktemp)"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "${INPUT_WORKFLOW_FILE:-}" ]; then
+            printf '%s\n' "$INPUT_WORKFLOW_FILE" > "$FILES_FILE"
+          elif [ "$EVENT_NAME" = "push" ] && [ -n "${BEFORE_SHA:-}" ] && ! printf '%s' "$BEFORE_SHA" | grep -Eq '^0+$'; then
+            git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" -- 'n8n/workflows/**/*.json' 'n8n/workflows/*.json' > "$FILES_FILE"
+
+            if git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" -- \
+              'scripts/deploy-n8n-workflow.mjs' \
+              '.github/workflows/deploy-n8n-workflow.yml' | grep -q .; then
+              find n8n/workflows -type f -name '*.json' -print | sort -u > "$FILES_FILE"
+            fi
+          else
+            find n8n/workflows -type f -name '*.json' -print | sort -u > "$FILES_FILE"
           fi
 
-          jq empty "${N8N_WORKFLOW_FILE}"
+          sort -u "$FILES_FILE" -o "$FILES_FILE"
 
-      - name: Criar ou atualizar workflow
+          if [ ! -s "$FILES_FILE" ]; then
+            echo "Nenhum workflow JSON foi alterado."
+            echo "has_files=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          while IFS= read -r file; do
+            if [ ! -f "$file" ]; then
+              echo "O arquivo $file não existe."
+              exit 1
+            fi
+            jq empty "$file"
+          done < "$FILES_FILE"
+
+          echo "Workflows selecionados:"
+          cat "$FILES_FILE"
+
+          {
+            echo "has_files=true"
+            echo "files<<EOF"
+            cat "$FILES_FILE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Criar ou atualizar workflows
+        if: steps.select-workflows.outputs.has_files == 'true'
+        shell: bash
         env:
           N8N_BASE_URL: ${{ vars.N8N_BASE_URL }}
           N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
-          N8N_WORKFLOW_FILE: ${{ inputs.workflow_file }}
-        run: node scripts/deploy-n8n-workflow.mjs
+          WORKFLOW_FILES: ${{ steps.select-workflows.outputs.files }}
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r workflow_file; do
+            [ -n "$workflow_file" ] || continue
+            echo "Implantando ${workflow_file}..."
+            N8N_WORKFLOW_FILE="$workflow_file" node scripts/deploy-n8n-workflow.mjs
+          done <<< "$WORKFLOW_FILES"
