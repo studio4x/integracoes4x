@@ -16,6 +16,14 @@ for (const field of ['name', 'nodes', 'connections', 'settings']) {
   }
 }
 
+const previousNames = Array.isArray(source?.deployment?.previousNames)
+  ? source.deployment.previousNames
+      .filter((name) => typeof name === 'string')
+      .map((name) => name.trim())
+      .filter(Boolean)
+  : [];
+const candidateNames = [...new Set([source.name, ...previousNames])];
+
 const headers = {
   Accept: 'application/json',
   'Content-Type': 'application/json',
@@ -47,7 +55,9 @@ async function n8nRequest(path, options = {}) {
   return body;
 }
 
-async function findWorkflowByName(name) {
+async function findWorkflowsByNames(names) {
+  const expectedNames = new Set(names);
+  const matches = new Map();
   let cursor;
 
   do {
@@ -55,12 +65,13 @@ async function findWorkflowByName(name) {
     if (cursor) query.set('cursor', cursor);
 
     const result = await n8nRequest(`/workflows?${query.toString()}`);
-    const match = result?.data?.find((workflow) => workflow.name === name);
-    if (match) return match;
+    for (const workflow of result?.data ?? []) {
+      if (expectedNames.has(workflow.name)) matches.set(workflow.id, workflow);
+    }
     cursor = result?.nextCursor ?? null;
   } while (cursor);
 
-  return null;
+  return [...matches.values()];
 }
 
 function mergeRuntimeConfiguration(desiredNodes, currentNodes = []) {
@@ -78,8 +89,8 @@ function mergeRuntimeConfiguration(desiredNodes, currentNodes = []) {
       merged.credentials = current.credentials;
     }
 
-    // Mantém o webhookId em atualizações, evitando trocar a identidade interna do webhook.
-    if (current.webhookId && !merged.webhookId) {
+    // Mantém a identidade interna do webhook ao atualizar ou renomear o workflow.
+    if (current.webhookId) {
       merged.webhookId = current.webhookId;
     }
 
@@ -97,7 +108,13 @@ function buildPayload(sourceWorkflow, currentWorkflow = null) {
   };
 }
 
-const existingSummary = await findWorkflowByName(source.name);
+const existingMatches = await findWorkflowsByNames(candidateNames);
+if (existingMatches.length > 1) {
+  const details = existingMatches.map((workflow) => `${workflow.name} (${workflow.id})`).join(', ');
+  throw new Error(`Mais de um workflow corresponde ao nome atual ou aos nomes anteriores: ${details}`);
+}
+
+const existingSummary = existingMatches[0] ?? null;
 let result;
 let operation;
 
@@ -107,7 +124,7 @@ if (existingSummary) {
     method: 'PUT',
     body: JSON.stringify(buildPayload(source, current)),
   });
-  operation = 'atualizado';
+  operation = existingSummary.name === source.name ? 'atualizado' : 'renomeado e atualizado';
 } else {
   result = await n8nRequest('/workflows', {
     method: 'POST',
@@ -133,7 +150,7 @@ if (process.env.GITHUB_STEP_SUMMARY) {
       `- **ID:** \`${result.id}\``,
       `- **Ativo:** ${Boolean(result.active) ? 'sim' : 'não'}`,
       '',
-      'As credenciais configuradas diretamente no n8n são preservadas nas atualizações.',
+      'As credenciais e os identificadores internos dos webhooks configurados no n8n são preservados nas atualizações.',
       '',
     ].join('\n'),
   );
