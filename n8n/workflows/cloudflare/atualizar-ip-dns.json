@@ -1,0 +1,499 @@
+{
+  "name": "Studio 4x - Cloudflare - Atualizar IP em DNS",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Cloudflare — atualização em massa de registros DNS\n\nPercorre todas as zonas ativas acessíveis pelo token e procura registros **A** cujo conteúdo seja exatamente `85.155.127.7`.\n\nO novo conteúdo será `85.155.127.16`.\n\n**Segurança:** o workflow nasce com `dry_run = true`. A primeira execução apenas lista o que seria alterado.",
+        "height": 300,
+        "width": 520,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -980,
+        -500
+      ],
+      "id": "07b465ac-fdaa-4630-9a72-6a7b55802b24",
+      "name": "Visão geral"
+    },
+    {
+      "parameters": {
+        "content": "## Pré-requisito no servidor n8n\n\nConfigure a variável de ambiente:\n\n`CLOUDFLARE_API_TOKEN`\n\nO token deve ter acesso a todas as zonas necessárias e permissões:\n- **Zone / Zone / Read**\n- **Zone / DNS / Edit**\n\nNão coloque o token diretamente no workflow ou no GitHub.\n\nDepois de revisar a saída de **Pré-visualização**, altere `dryRun` para `false` no node **Configuração Cloudflare**.",
+        "height": 360,
+        "width": 520,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -980,
+        -150
+      ],
+      "id": "08a1c20a-bddc-4095-a5ff-a08c495b9dd6",
+      "name": "Segurança e token"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        320
+      ],
+      "id": "7a5c4c10-7315-4636-b010-3f5d4dd93e82",
+      "name": "Executar manualmente"
+    },
+    {
+      "parameters": {
+        "jsCode": "const oldIp = '85.155.127.7';\nconst newIp = '85.155.127.16';\n\n// Mantenha true na primeira execução.\n// Troque para false somente depois de conferir a pré-visualização.\nconst dryRun = true;\n\n// Opcional: informe um domínio exato para limitar o teste.\n// Deixe vazio para verificar todas as zonas ativas acessíveis pelo token.\nconst zoneNameFilter = '';\n\nfunction isIPv4(value) {\n  const parts = String(value).split('.');\n  return parts.length === 4 && parts.every((part) => {\n    if (!/^\\d{1,3}$/.test(part)) return false;\n    const number = Number(part);\n    return number >= 0 && number <= 255 && String(number) === String(Number(part));\n  });\n}\n\nlet tokenConfigured = false;\ntry {\n  tokenConfigured = Boolean(String($env.CLOUDFLARE_API_TOKEN || '').trim());\n} catch {\n  tokenConfigured = false;\n}\n\nif (!tokenConfigured) {\n  throw new Error(\n    'A variável CLOUDFLARE_API_TOKEN não foi configurada no servidor do n8n.'\n  );\n}\n\nif (!isIPv4(oldIp) || !isIPv4(newIp)) {\n  throw new Error('O IP antigo ou o novo IP não é um IPv4 válido.');\n}\n\nif (oldIp === newIp) {\n  throw new Error('O IP antigo e o novo IP não podem ser iguais.');\n}\n\nreturn [{\n  json: {\n    old_ip: oldIp,\n    new_ip: newIp,\n    dry_run: dryRun,\n    zone_name_filter: String(zoneNameFilter || '').trim().toLowerCase(),\n    started_at: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -650,
+        320
+      ],
+      "id": "42662fb0-a28d-4547-8414-e86fb902914d",
+      "name": "Configuração Cloudflare"
+    },
+    {
+      "parameters": {
+        "url": "https://api.cloudflare.com/client/v4/zones",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "active"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.CLOUDFLARE_API_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.result_info.page >= $response.body.result_info.total_pages }}",
+              "limitPagesFetched": true,
+              "maxRequests": 1000,
+              "requestInterval": 100
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -390,
+        320
+      ],
+      "id": "a3c9ba7b-d81f-44ad-9c81-fd5af53c9b51",
+      "name": "Listar zonas Cloudflare"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('Configuração Cloudflare').first().json;\nconst pages = $input.all();\nconst zones = [];\n\nfor (const item of pages) {\n  const response = item.json || {};\n  const body = response.body && typeof response.body === 'object'\n    ? response.body\n    : response;\n\n  const statusCode = Number(response.statusCode || 200);\n  if (statusCode < 200 || statusCode >= 300 || body.success !== true) {\n    throw new Error(\n      `Falha ao listar zonas da Cloudflare. HTTP ${statusCode}: ${JSON.stringify(body.errors || body)}`\n    );\n  }\n\n  for (const zone of body.result || []) {\n    const zoneName = String(zone.name || '').trim().toLowerCase();\n    if (!zone.id || !zoneName) continue;\n\n    if (config.zone_name_filter && zoneName !== config.zone_name_filter) {\n      continue;\n    }\n\n    zones.push({\n      json: {\n        ...config,\n        zone_id: zone.id,\n        zone_name: zoneName,\n        account_id: zone.account?.id || null,\n        account_name: zone.account?.name || null\n      }\n    });\n  }\n}\n\nif (!zones.length) {\n  throw new Error(\n    config.zone_name_filter\n      ? `Nenhuma zona ativa foi encontrada para ${config.zone_name_filter}.`\n      : 'Nenhuma zona ativa foi encontrada para o token informado.'\n  );\n}\n\nreturn zones;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        320
+      ],
+      "id": "84d71037-4089-483a-92fe-1aac15d50e87",
+      "name": "Separar zonas"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.cloudflare.com/client/v4/zones/' + $json.zone_id + '/dns_records' }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "type",
+              "value": "A"
+            },
+            {
+              "name": "content.exact",
+              "value": "={{ $json.old_ip }}"
+            },
+            {
+              "name": "match",
+              "value": "all"
+            },
+            {
+              "name": "per_page",
+              "value": "5000000"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.CLOUDFLARE_API_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 10,
+              "batchInterval": 1000
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        150,
+        320
+      ],
+      "id": "ae8fe9f2-584f-43cf-aed1-0ad1bd5135d9",
+      "name": "Buscar registros com IP antigo"
+    },
+    {
+      "parameters": {
+        "jsCode": "const responses = $input.all();\nconst zones = $('Separar zonas').all();\nconst records = [];\nconst listingErrors = [];\n\nfor (let index = 0; index < responses.length; index += 1) {\n  const zone = zones[index]?.json || {};\n  const response = responses[index]?.json || {};\n  const body = response.body && typeof response.body === 'object'\n    ? response.body\n    : response;\n  const statusCode = Number(response.statusCode || 200);\n\n  if (statusCode < 200 || statusCode >= 300 || body.success !== true) {\n    listingErrors.push({\n      zone: zone.zone_name || zone.zone_id || `índice ${index}`,\n      statusCode,\n      errors: body.errors || body\n    });\n    continue;\n  }\n\n  for (const record of body.result || []) {\n    const isExactTarget =\n      record.type === 'A' &&\n      String(record.content || '').trim() === String(zone.old_ip || '').trim();\n\n    if (!isExactTarget) continue;\n\n    records.push({\n      json: {\n        ...zone,\n        record_found: true,\n        record_id: record.id,\n        record_name: record.name,\n        record_type: record.type,\n        old_ip: record.content,\n        new_ip: zone.new_ip,\n        ttl: record.ttl,\n        proxied: Boolean(record.proxied),\n        comment: record.comment ?? null,\n        tags: Array.isArray(record.tags) ? record.tags : [],\n        status: zone.dry_run ? 'aguardando_pre_visualizacao' : 'pronto_para_atualizar'\n      }\n    });\n  }\n}\n\nif (listingErrors.length) {\n  throw new Error(\n    `A consulta de registros falhou em uma ou mais zonas. Nenhuma alteração foi iniciada: ${JSON.stringify(listingErrors)}`\n  );\n}\n\nif (!records.length) {\n  const config = $('Configuração Cloudflare').first().json;\n  return [{\n    json: {\n      ...config,\n      record_found: false,\n      status: 'nenhum_registro_encontrado',\n      zones_checked: zones.length,\n      message: `Nenhum registro A com o IP ${config.old_ip} foi encontrado.`\n    }\n  }];\n}\n\nreturn records;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        430,
+        320
+      ],
+      "id": "df83587d-2c89-4103-b9f1-b84fb802938a",
+      "name": "Preparar registros encontrados"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "99f9554e-f281-4f19-8c0b-53851ba367f1",
+              "leftValue": "={{ $json.record_found }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        700,
+        320
+      ],
+      "id": "5c5344ba-3713-4ef9-9e76-c3ea829fcf4e",
+      "name": "Registro encontrado?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "213ed514-f0f7-4e68-bc4f-f5ae6c352d88",
+              "leftValue": "={{ !$json.dry_run }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        220
+      ],
+      "id": "bb8899a9-6e57-4da1-80aa-f4c19c42c796",
+      "name": "Executar alterações?"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item) => ({\n  json: {\n    ...item.json,\n    status: 'simulacao',\n    success: true,\n    message: `SIMULAÇÃO: ${item.json.record_name} seria alterado de ${item.json.old_ip} para ${item.json.new_ip}.`\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        360
+      ],
+      "id": "5184dcb2-c627-4069-a8ed-80d6711dbd65",
+      "name": "Pré-visualização"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://api.cloudflare.com/client/v4/zones/' + $json.zone_id + '/dns_records/' + $json.record_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.CLOUDFLARE_API_TOKEN }}"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { content: $json.new_ip } }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 5,
+              "batchInterval": 1000
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1220,
+        120
+      ],
+      "id": "a6700d90-c55d-44d4-9433-b9f6167b49ef",
+      "name": "Atualizar registro DNS"
+    },
+    {
+      "parameters": {
+        "jsCode": "const responses = $input.all();\nconst records = $('Preparar registros encontrados').all();\n\nreturn responses.map((item, index) => {\n  const record = records[index]?.json || {};\n  const response = item.json || {};\n  const body = response.body && typeof response.body === 'object'\n    ? response.body\n    : response;\n  const statusCode = Number(response.statusCode || 200);\n  const updatedContent = String(body.result?.content || '').trim();\n\n  const success =\n    statusCode >= 200 &&\n    statusCode < 300 &&\n    body.success === true &&\n    updatedContent === String(record.new_ip || '').trim();\n\n  return {\n    json: {\n      ...record,\n      success,\n      status: success ? 'atualizado' : 'erro_na_atualizacao',\n      http_status: statusCode,\n      cloudflare_errors: body.errors || [],\n      updated_content: updatedContent || null,\n      message: success\n        ? `${record.record_name} foi alterado de ${record.old_ip} para ${record.new_ip}.`\n        : `Não foi possível confirmar a atualização de ${record.record_name}.`\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1490,
+        120
+      ],
+      "id": "72c37064-284b-4023-8cea-d90e8036f912",
+      "name": "Consolidar atualizações"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item) => ({\n  json: {\n    ...item.json,\n    success: true\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        500
+      ],
+      "id": "5a9bb294-3847-4f3b-a20f-28f2ab10ac7d",
+      "name": "Nenhum registro encontrado"
+    }
+  ],
+  "connections": {
+    "Executar manualmente": {
+      "main": [
+        [
+          {
+            "node": "Configuração Cloudflare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuração Cloudflare": {
+      "main": [
+        [
+          {
+            "node": "Listar zonas Cloudflare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar zonas Cloudflare": {
+      "main": [
+        [
+          {
+            "node": "Separar zonas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar zonas": {
+      "main": [
+        [
+          {
+            "node": "Buscar registros com IP antigo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar registros com IP antigo": {
+      "main": [
+        [
+          {
+            "node": "Preparar registros encontrados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar registros encontrados": {
+      "main": [
+        [
+          {
+            "node": "Registro encontrado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registro encontrado?": {
+      "main": [
+        [
+          {
+            "node": "Executar alterações?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nenhum registro encontrado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Executar alterações?": {
+      "main": [
+        [
+          {
+            "node": "Atualizar registro DNS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pré-visualização",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar registro DNS": {
+      "main": [
+        [
+          {
+            "node": "Consolidar atualizações",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": false,
+    "saveManualExecutions": true,
+    "timezone": "America/Sao_Paulo"
+  }
+}
